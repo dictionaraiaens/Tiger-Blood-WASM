@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIDEKICK</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg:#0b0e12; --panel:#12161c; --panel-2:#161b22; --line:#232a33;
+    --teal:#4fe0c9; --teal-dim:#1a3a36; --violet:#8b7bff;
+    --text:#e7ecf1; --text-dim:#7c8896; --red:#ff6b6b; --amber:#ffb454;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);}
+  body{font-family:'Inter',sans-serif;color:var(--text);display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+  code,.mono{font-family:'JetBrains Mono',monospace;}
+
+  #topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;
+    border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0f1318,#0b0e12);flex-shrink:0;}
+  #topbar .title{font-weight:700;font-size:15px;}
+  #topbar .title span{color:var(--teal);}
+  #gauges{display:flex;gap:26px;}
+  .gauge{display:flex;align-items:center;gap:10px;}
+  .gauge svg{transform:rotate(-90deg);}
+  .gauge .ring-bg{fill:none;stroke:#1c232b;stroke-width:5;}
+  .gauge .ring-fg{fill:none;stroke:var(--teal);stroke-width:5;stroke-linecap:round;
+    transition:stroke-dashoffset .5s ease, stroke .3s ease;}
+  .gauge .label{font-size:11px;color:var(--text-dim);}
+  .gauge .value{font-size:13px;font-weight:600;}
+
+  #main{flex:1;display:grid;grid-template-columns:1fr 1.1fr;min-height:0;}
+  @media (max-width:900px){#main{grid-template-columns:1fr;overflow-y:auto;}}
+  .panel{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);overflow-y:auto;}
+  .panel:last-child{border-right:none;}
+  .panel-head{padding:16px 20px 12px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+  .panel-head .h{font-size:12px;font-weight:700;letter-spacing:0.1em;color:var(--text-dim);text-transform:uppercase;}
+  .pill{font-size:11px;padding:3px 10px;border-radius:20px;background:var(--panel-2);color:var(--text-dim);border:1px solid var(--line);}
+  .pill.ready{color:var(--teal);border-color:var(--teal-dim);background:rgba(79,224,201,0.08);}
+  .pill.err{color:var(--red);border-color:#4a2323;background:rgba(255,107,107,0.08);}
+  .pill.busy{color:var(--amber);border-color:#4a3a1e;background:rgba(255,180,84,0.08);}
+
+  #emu-body{flex:1;display:flex;flex-direction:column;padding:0 20px 20px;min-height:0;gap:14px;}
+  #screen-card{background:#000;border-radius:12px;aspect-ratio:16/10;border:1px solid var(--line);
+    overflow:hidden;position:relative;box-shadow:0 8px 24px rgba(0,0,0,0.4);flex-shrink:0;}
+  #tiger-canvas{width:100%;height:100%;display:block;}
+  #bootlog{position:absolute;inset:0;padding:14px;margin:0;font-family:'JetBrains Mono',monospace;
+    font-size:12px;line-height:1.6;color:#9fd8ce;white-space:pre-wrap;overflow:hidden;}
+
+  .progress-row .meta{display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim);margin-bottom:5px;}
+  .bar-track{height:6px;border-radius:4px;background:var(--panel-2);overflow:hidden;}
+  .bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--teal),var(--violet));width:0%;transition:width .4s ease;}
+  .bar-fill.amber{background:linear-gradient(90deg,var(--amber),#ff8a5c);}
+  #boot-progress-wrap{display:flex;flex-direction:column;gap:10px;flex-shrink:0;}
+
+  /* ---------- TERMINAL / CLI ---------- */
+  #terminal-card{background:#05070a;border:1px solid var(--line);border-radius:12px;
+    display:flex;flex-direction:column;flex:1;min-height:220px;overflow:hidden;}
+  #terminal-topline{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;
+    border-bottom:1px solid var(--line);flex-shrink:0;}
+  #terminal-topline .label{font-size:10.5px;letter-spacing:0.08em;color:var(--text-dim);text-transform:uppercase;}
+  #terminal-output{flex:1;overflow-y:auto;padding:10px 12px;font-family:'JetBrains Mono',monospace;
+    font-size:12px;line-height:1.6;color:#9fd8ce;white-space:pre-wrap;}
+  #terminal-output .cmdline{color:#e7ecf1;}
+  #terminal-output .err{color:var(--red);}
+  #terminal-output .ai{color:var(--teal);}
+  #terminal-output .link{color:var(--violet);}
+  #terminal-inputrow{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);padding:8px 12px;flex-shrink:0;}
+  #terminal-inputrow .prompt{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--teal);}
+  #terminal-input{flex:1;background:none;border:none;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12.5px;}
+  #terminal-input:focus{outline:none;}
+  #terminal-input:disabled{opacity:.4;}
+
+  .mount-note{font-size:10.5px;color:var(--text-dim);border:1px dashed var(--line);border-radius:8px;
+    padding:8px 10px;font-family:'JetBrains Mono',monospace;white-space:pre-wrap;flex-shrink:0;}
+
+  #ai-body{flex:1;display:flex;flex-direction:column;min-height:0;}
+  #chips{display:flex;gap:8px;flex-wrap:wrap;padding:0 20px 14px;flex-shrink:0;}
+  .chip{font-size:11.5px;padding:7px 12px;border:1px solid var(--line);border-radius:20px;
+    color:var(--text-dim);cursor:pointer;background:var(--panel-2);transition:.15s;}
+  .chip:hover{border-color:var(--teal-dim);color:var(--teal);}
+
+  #chat{flex:1;overflow-y:auto;padding:4px 20px 16px;display:flex;flex-direction:column;gap:12px;min-height:0;}
+  .msg{max-width:88%;padding:11px 14px;border-radius:12px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;}
+  .msg.user{align-self:flex-end;background:linear-gradient(135deg,var(--teal-dim),#152b28);border:1px solid var(--teal-dim);}
+  .msg.ai{align-self:flex-start;background:var(--panel-2);border:1px solid var(--line);}
+  .msg.sys{align-self:center;color:var(--text-dim);font-size:11.5px;background:none;text-align:center;}
+  .msg.error{align-self:center;color:var(--red);font-size:12px;background:rgba(255,107,107,0.06);border:1px solid #4a2323;border-radius:8px;}
+
+  #genmeter{display:none;align-items:center;gap:8px;padding:0 20px 8px;font-size:11px;color:var(--text-dim);flex-shrink:0;}
+  #genmeter.show{display:flex;}
+  #genmeter .bars{display:flex;align-items:flex-end;gap:2px;height:14px;}
+  #genmeter .bars i{width:3px;background:var(--teal);border-radius:1px;animation:bounce 0.8s infinite ease-in-out;}
+  #genmeter .bars i:nth-child(2){animation-delay:0.1s;} #genmeter .bars i:nth-child(3){animation-delay:0.2s;}
+  #genmeter .bars i:nth-child(4){animation-delay:0.3s;} #genmeter .bars i:nth-child(5){animation-delay:0.4s;}
+  @keyframes bounce{0%,100%{height:4px;}50%{height:14px;}}
+
+  #inputbar{display:flex;gap:8px;padding:12px 20px 20px;border-top:1px solid var(--line);flex-shrink:0;}
+  #inputbar input{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+    padding:11px 14px;color:var(--text);font-family:inherit;font-size:13.5px;}
+  #inputbar input:focus{outline:none;border-color:var(--teal-dim);}
+  #inputbar button{border:none;border-radius:10px;padding:0 18px;font-weight:700;font-size:13px;cursor:pointer;transition:.15s;}
+  #sendbtn{background:var(--teal);color:#04201c;}
+  #sendbtn:hover{filter:brightness(1.08);}
+  #sendbtn.retry{background:var(--red);color:#2a0d0d;}
+  #stopbtn{background:var(--panel-2);color:var(--red);border:1px solid #4a2323;display:none;}
+  #stopbtn.show{display:block;}
+
+  ::-webkit-scrollbar{width:8px;} ::-webkit-scrollbar-thumb{background:#232a33;border-radius:4px;}
+</style>
+</head>
+<body>
+
+  <div id="topbar">
+    <div class="title">SIDE<span>KICK</span> · Tiger build console</div>
+    <div id="gauges">
+      <div class="gauge" id="gauge-gpu">
+        <svg width="34" height="34" viewBox="0 0 34 34">
+          <circle class="ring-bg" cx="17" cy="17" r="14"></circle>
+          <circle class="ring-fg" cx="17" cy="17" r="14" stroke-dasharray="88" stroke-dashoffset="88"></circle>
+        </svg>
+        <div><div class="value" id="gpu-value">--</div><div class="label">WebGPU</div></div>
+      </div>
+      <div class="gauge" id="gauge-model">
+        <svg width="34" height="34" viewBox="0 0 34 34">
+          <circle class="ring-bg" cx="17" cy="17" r="14"></circle>
+          <circle class="ring-fg" cx="17" cy="17" r="14" stroke-dasharray="88" stroke-dashoffset="88"></circle>
+        </svg>
+        <div><div class="value" id="model-value">0%</div><div class="label">Model</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="h">Tiger Emulator</span>
+        <span class="pill" id="emu-pill">stub</span>
+      </div>
+      <div id="emu-body">
+        <div id="screen-card">
+          <canvas id="tiger-canvas"></canvas>
+          <pre id="bootlog"></pre>
+        </div>
+        <div id="boot-progress-wrap">
+          <div class="progress-row">
+            <div class="meta"><span>Disk chunks</span><span id="disk-pct">0%</span></div>
+            <div class="bar-track"><div class="bar-fill" id="disk-bar"></div></div>
+          </div>
+          <div class="progress-row">
+            <div class="meta"><span>Wasm core</span><span id="core-pct">waiting</span></div>
+            <div class="bar-track"><div class="bar-fill amber" id="core-bar"></div></div>
+          </div>
+        </div>
+
+        <div id="terminal-card">
+          <div id="terminal-topline">
+            <span class="label">sidekick-cli</span>
+            <span class="pill" id="term-model-pill">loading</span>
+          </div>
+          <div id="terminal-output"></div>
+          <div id="terminal-inputrow">
+            <span class="prompt">tiger$</span>
+            <input id="terminal-input" type="text" placeholder="type a command, or just ask something…" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="mount-note">// MOUNT A: Module.canvas = document.getElementById('tiger-canvas')
+// MOUNT B: back FS reads with ChunkedDiskImage.read(offset, length)
+// MOUNT C: once the real core boots, split stdin/stdout between the
+//          emulated Mac's own Terminal.app and this host-side CLI.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="h">Sidekick · SmolLM2-135M</span>
+        <span class="pill" id="model-pill">loading</span>
+      </div>
+      <div id="ai-body">
+        <div id="chips">
+          <button class="chip" data-p="curl in Tiger is failing TLS handshakes against GitHub for the Tigerbrew installer. What's the fix?">TLS/curl fix</button>
+          <button class="chip" data-p="Explain what brew doctor output means and what I should check first on Tigerbrew.">brew doctor</button>
+          <button class="chip" data-p="Give me the qemu-system-ppc flags for booting an existing Tiger qcow2 disk without the install CD.">QEMU boot flags</button>
+          <button class="chip" data-p="What should I check if the DingusPPC WASM build hangs at the boot chime?">Wasm boot hang</button>
+        </div>
+        <div id="chat">
+          <div class="msg sys">One model, two entry points — ask here or in the terminal below. Queued until ready.</div>
+        </div>
+        <div id="genmeter"><div class="bars"><i></i><i></i><i></i><i></i><i></i></div><span id="genmeter-text">generating…</span></div>
+        <div id="inputbar">
+          <input id="chatinput" type="text" placeholder="Ask the sidekick…" />
+          <button id="stopbtn">Stop</button>
+          <button id="sendbtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* =========================================================
+   GAUGES
+   ========================================================= */
+const CIRC = 2 * Math.PI * 14;
+function setGauge(id, pct, color){
+  const el = document.querySelector('#' + id + ' .ring-fg');
+  const clamped = Math.max(0, Math.min(100, pct));
+  el.style.strokeDashoffset = CIRC - (CIRC * clamped / 100);
+  if (color) el.style.stroke = color;
+}
+
+/* =========================================================
+   LEFT PANEL — emulator stub
+   ========================================================= */
+const bootlogEl = document.getElementById('bootlog');
+const diskBar = document.getElementById('disk-bar');
+const diskPct = document.getElementById('disk-pct');
+const coreBar = document.getElementById('core-bar');
+const corePct = document.getElementById('core-pct');
+const emuPill = document.getElementById('emu-pill');
+
+function appendBootLog(line){
+  bootlogEl.textContent += line + '\n';
+  bootlogEl.scrollTop = bootlogEl.scrollHeight;
+}
+const fakeBoot = [
+  'OpenBIOS 1.1 (mac99) — PowerPC 750 (G4)',
+  'Reading manifest.json — 12 chunks',
+  'chunk_00000.bin OK   chunk_00001.bin OK',
+  '[stub] swap for Module.canvas + FS bridge',
+];
+let bi = 0, diskProgress = 0;
+const bootTimer = setInterval(() => {
+  diskProgress = Math.min(100, diskProgress + 20);
+  diskBar.style.width = diskProgress + '%';
+  diskPct.textContent = diskProgress + '%';
+  if (bi < fakeBoot.length) appendBootLog(fakeBoot[bi++]);
+  if (diskProgress >= 100){
+    clearInterval(bootTimer);
+    corePct.textContent = 'not connected';
+    coreBar.style.width = '100%';
+    emuPill.textContent = 'awaiting wasm core';
+    emuPill.className = 'pill err';
+  }
+}, 400);
+
+/* =========================================================
+   TERMINAL — real CLI, with SmolLM2 as the built-in assistant
+   ========================================================= */
+const termOutput = document.getElementById('terminal-output');
+const termInput = document.getElementById('terminal-input');
+const termModelPill = document.getElementById('term-model-pill');
+
+function termPrint(text, cls){
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = text;
+  termOutput.appendChild(line);
+  termOutput.scrollTop = termOutput.scrollHeight;
+  return line;
+}
+function termLink(label, url){
+  const line = document.createElement('div');
+  line.className = 'link';
+  line.textContent = label + '  →  ' + url;
+  termOutput.appendChild(line);
+  termOutput.scrollTop = termOutput.scrollHeight;
+}
+
+termPrint('sidekick-cli — real commands below, or just type a question in plain English.');
+termPrint("try: help · ls · uname · skills · opencode · openclaw · clear");
+
+const BUILTIN_CMDS = new Set(['help','ls','uname','uname -a','clear','skills','opencode','openclaw']);
+
+function handleTerminalLine(raw){
+  const cmd = raw.trim();
+  if (!cmd) return;
+  termPrint('tiger$ ' + cmd, 'cmdline');
+  const c = cmd.toLowerCase();
+
+  if (c === 'help'){
+    termPrint('builtins: help, ls, uname, clear, skills, opencode, openclaw');
+    termPrint('anything else is sent to SmolLM2 as a natural-language question.');
+    return;
+  }
+  if (c === 'uname' || c === 'uname -a'){ termPrint('Darwin Tiger 8.0 Power Macintosh (stub — no real core yet)'); return; }
+  if (c === 'ls'){ termPrint('Applications  Library  System  Users'); return; }
+  if (c === 'clear'){ termOutput.innerHTML = ''; return; }
+
+  if (c === 'skills'){
+    termPrint('skills.sh — registry/package manager for AI agent skills (.claude/skills/, etc).');
+    termPrint("Runs on your own machine, not in this tab:  npx skills find \"topic\"  /  npx skills add <skill>");
+    termLink('skills.sh', 'https://www.skills.sh/');
+    return;
+  }
+  if (c === 'opencode'){
+    termPrint('OpenCode — open-source terminal AI coding agent (MIT license, no account needed for the CLI).');
+    termPrint('Free paths: Google Gemini free tier, Groq free tier, or fully local via Ollama ($0).');
+    termPrint('Install on your own machine:  curl -fsSL https://opencode.ai/install | bash');
+    termLink('opencode.ai', 'https://opencode.ai/');
+    return;
+  }
+  if (c === 'openclaw'){
+    termPrint('OpenClaw — open-source autonomous personal AI agent (MIT). Real shell/file/browser access.');
+    termPrint('Caution: third-party skills have been found doing data exfiltration via prompt injection —');
+    termPrint('one of its own maintainers has said it is "far too dangerous" if you\'re not comfortable on a CLI.');
+    termLink('openclaw.ai', 'https://openclaw.ai/');
+    return;
+  }
+
+  // Anything else: treat as a natural-language question for the sidekick.
+  askSidekick(cmd, 'terminal');
+}
+termInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter'){ handleTerminalLine(termInput.value); termInput.value = ''; }
+});
+
+/* =========================================================
+   RIGHT PANEL + SHARED WORKER — one SmolLM2 instance, two UIs
+   ========================================================= */
+const chatEl = document.getElementById('chat');
+const inputEl = document.getElementById('chatinput');
+const sendBtn = document.getElementById('sendbtn');
+const stopBtn = document.getElementById('stopbtn');
+const modelPill = document.getElementById('model-pill');
+const chips = document.querySelectorAll('.chip');
+const genmeter = document.getElementById('genmeter');
+const genmeterText = document.getElementById('genmeter-text');
+
+function addMsg(role, text){
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
+const hasWebGPU = !!navigator.gpu;
+document.getElementById('gpu-value').textContent = hasWebGPU ? 'on' : 'n/a';
+setGauge('gauge-gpu', 100, hasWebGPU ? '#4fe0c9' : '#ff6b6b');
+
+let modelReady = false, modelFailed = false, isGenerating = false;
+let pendingQueue = []; // { text, source }
+let currentTarget = null; // { source: 'chat'|'terminal', el }
+let genStartTime = 0, tokenCount = 0;
+let loadTimeoutId, genWatchdogId;
+
+function setModelPills(text, cls){
+  modelPill.textContent = text; modelPill.className = 'pill ' + cls;
+  termModelPill.textContent = text; termModelPill.className = 'pill ' + cls;
+}
+
+const workerSrc = `
+  import { pipeline, TextStreamer, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+
+  env.allowLocalModels = false;
+  env.backends.onnx.wasm.numThreads = 1;
+
+  const MODEL_ID = 'HuggingFaceTB/SmolLM2-135M-Instruct';
+  const SYSTEM_PROMPT = 'You are SIDEKICK, a terse and precise CLI assistant embedded ' +
+    'in a browser-based PowerPC Mac OS X Tiger emulation project. The user is running ' +
+    'Tiger 10.4 under QEMU, installing Tigerbrew, and building a WASM port of a PPC ' +
+    'emulator for GitHub Pages. Give short, concrete, command-line-oriented answers. ' +
+    'If unsure, say so plainly.';
+
+  let generator = null;
+
+  async function getGenerator(progressCb) {
+    if (generator) return generator;
+    const device = ${hasWebGPU ? "'webgpu'" : "'wasm'"};
+    const dtype = ${hasWebGPU ? "'q4'" : "'q8'"};
+    generator = await pipeline('text-generation', MODEL_ID, { device, dtype, progress_callback: progressCb });
+    return generator;
+  }
+
+  self.onmessage = async (e) => {
+    const { type, text } = e.data;
+    try {
+      if (type === 'load') {
+        await getGenerator((p) => self.postMessage({ status: 'progress', data: p }));
+        self.postMessage({ status: 'ready' });
+        return;
+      }
+      if (type === 'generate') {
+        const gen = await getGenerator((p) => self.postMessage({ status: 'progress', data: p }));
+        const messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: text },
+        ];
+        const streamer = new TextStreamer(gen.tokenizer, {
+          skip_prompt: true, skip_special_tokens: true,
+          callback_function: (token) => self.postMessage({ status: 'update', token }),
+        });
+        await gen(messages, { max_new_tokens: 160, temperature: 0.6, streamer });
+        self.postMessage({ status: 'complete' });
+      }
+    } catch (err) {
+      self.postMessage({ status: 'error', message: (err && err.message) ? err.message : String(err) });
+    }
+  };
+`;
+
+let worker;
+
+function startWorker(){
+  modelFailed = false;
+  setModelPills('loading', 'busy');
+
+  const workerBlob = new Blob([workerSrc], { type: 'text/javascript' });
+  worker = new Worker(URL.createObjectURL(workerBlob), { type: 'module' });
+
+  worker.onerror = (err) => {
+    handleFailure('Worker failed to start: ' + (err.message || 'unknown error') +
+      '. Usually a blocked CDN import (network/CSP) or module Workers restricted here.');
+  };
+  worker.onmessageerror = () => handleFailure('Worker sent an unreadable message.');
+
+  worker.onmessage = (e) => {
+    const { status, data, token, message } = e.data;
+
+    if (status === 'progress') {
+      clearTimeout(loadTimeoutId);
+      if (data && data.status === 'progress' && data.file) {
+        const pct = data.progress ? Math.round(data.progress) : 0;
+        setGauge('gauge-model', pct);
+        document.getElementById('model-value').textContent = pct + '%';
+      }
+    }
+
+    if (status === 'ready') {
+      clearTimeout(loadTimeoutId);
+      modelReady = true;
+      setGauge('gauge-model', 100, '#4fe0c9');
+      document.getElementById('model-value').textContent = 'ready';
+      setModelPills('ready · ' + (hasWebGPU ? 'WebGPU' : 'WASM'), 'ready');
+      addMsg('sys', 'Sidekick ready.');
+      termPrint('[sidekick ready — ' + (hasWebGPU ? 'WebGPU' : 'WASM') + ']');
+      if (pendingQueue.length) { const n = pendingQueue.shift(); runGeneration(n.text, n.source); }
+    }
+
+    if (status === 'update') {
+      clearTimeout(genWatchdogId);
+      armGenWatchdog();
+      if (currentTarget) {
+        if (currentTarget.source === 'chat') {
+          currentTarget.el.textContent += token;
+          chatEl.scrollTop = chatEl.scrollHeight;
+        } else {
+          currentTarget.el.textContent += token;
+          termOutput.scrollTop = termOutput.scrollHeight;
+        }
+      }
+      tokenCount++;
+      const secs = (Date.now() - genStartTime) / 1000;
+      if (secs > 0) genmeterText.textContent = (tokenCount / secs).toFixed(1) + ' tok/s';
+    }
+
+    if (status === 'complete') endGeneration();
+    if (status === 'error') handleFailure(message);
+  };
+
+  worker.postMessage({ type: 'load' });
+  loadTimeoutId = setTimeout(() => {
+    if (!modelReady) handleFailure('No response after 30s — download or WebGPU init may be stuck.');
+  }, 30000);
+}
+
+function armGenWatchdog(){
+  clearTimeout(genWatchdogId);
+  genWatchdogId = setTimeout(() => {
+    if (isGenerating) {
+      handleFailure('Generation stalled (no output for 25s) — likely out of GPU/RAM headroom. Stopped it for you.');
+      forceStop();
+    }
+  }, 25000);
+}
+
+function forceStop(){
+  if (worker) worker.terminate();
+  clearTimeout(genWatchdogId);
+  isGenerating = false;
+  currentTarget = null;
+  genmeter.classList.remove('show');
+  stopBtn.classList.remove('show');
+  inputEl.disabled = false;
+  termInput.disabled = false;
+  modelReady = false;
+}
+
+function handleFailure(msg){
+  if (modelFailed) return;
+  modelFailed = true;
+  setModelPills('failed', 'err');
+  setGauge('gauge-model', 100, '#ff6b6b');
+  addMsg('error', msg);
+  termPrint('[error] ' + msg, 'err');
+  sendBtn.textContent = 'Retry';
+  sendBtn.classList.add('retry');
+  sendBtn.disabled = false;
+  stopBtn.classList.remove('show');
+  inputEl.disabled = false;
+  termInput.disabled = false;
+  isGenerating = false;
+}
+
+function runGeneration(text, source){
+  isGenerating = true;
+  genStartTime = Date.now();
+  tokenCount = 0;
+  genmeter.classList.add('show');
+  genmeterText.textContent = 'generating…';
+  sendBtn.disabled = true;
+  inputEl.disabled = true;
+  termInput.disabled = true;
+  stopBtn.classList.add('show');
+
+  if (source === 'chat') {
+    currentTarget = { source: 'chat', el: addMsg('ai', '') };
+  } else {
+    termPrint(''); // spacer
+    const line = termPrint('', 'ai');
+    currentTarget = { source: 'terminal', el: line };
+  }
+
+  armGenWatchdog();
+  worker.postMessage({ type: 'generate', text });
+}
+
+function endGeneration(){
+  clearTimeout(genWatchdogId);
+  isGenerating = false;
+  currentTarget = null;
+  genmeter.classList.remove('show');
+  stopBtn.classList.remove('show');
+  sendBtn.disabled = false;
+  inputEl.disabled = false;
+  termInput.disabled = false;
+  if (pendingQueue.length) { const n = pendingQueue.shift(); runGeneration(n.text, n.source); }
+}
+
+function askSidekick(text, source){
+  if (!text.trim()) return;
+
+  if (modelFailed){
+    const msg = 'Restarting sidekick…';
+    if (source === 'chat') addMsg('sys', msg); else termPrint('[' + msg + ']');
+    sendBtn.textContent = 'Send';
+    sendBtn.classList.remove('retry');
+    startWorker();
+    pendingQueue.push({ text, source });
+    return;
+  }
+
+  if (source === 'chat') addMsg('user', text);
+
+  if (!modelReady){
+    const msg = 'Still loading (' + document.getElementById('model-value').textContent + ') — queued.';
+    if (source === 'chat') addMsg('sys', msg); else termPrint('[' + msg + ']');
+    pendingQueue.push({ text, source });
+    return;
+  }
+
+  if (isGenerating){
+    pendingQueue.push({ text, source });
+    if (source === 'terminal') termPrint('[queued behind current generation]');
+    return;
+  }
+
+  runGeneration(text, source);
+}
+
+sendBtn.addEventListener('click', () => { askSidekick(inputEl.value, 'chat'); inputEl.value = ''; });
+inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ askSidekick(inputEl.value, 'chat'); inputEl.value = ''; } });
+chips.forEach(chip => chip.addEventListener('click', () => askSidekick(chip.dataset.p, 'chat')));
+stopBtn.addEventListener('click', () => {
+  addMsg('sys', 'Stopped by user. Restarting sidekick…');
+  termPrint('[stopped by user — restarting sidekick]');
+  forceStop();
+  startWorker();
+});
+
+startWorker();
+</script>
+</body>
+</html>
